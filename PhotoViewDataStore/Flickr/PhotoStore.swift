@@ -30,6 +30,8 @@ class PhotoStore {
         return URLSession(configuration: config)
     }()
     
+    let imageStore = ImageStore()
+    
     // Fetch intereting photos and update local persistent photo models
     func fetchInterestingPhtotos(completion: @escaping (Result<[Photo], Error>) -> Void) {
         let url = FlickrAPI.interestingPhotosURL
@@ -95,5 +97,67 @@ class PhotoStore {
         case let .failure(error):
             return .failure(error)
         }
+    }
+    
+    // Fetch all saved photo metas
+    func fetchAllPhotos(completion: @escaping (Result<[Photo], Error>) -> Void) {
+        let fetchRequest: NSFetchRequest<Photo> = Photo.fetchRequest()
+        let sortByDateTaken = NSSortDescriptor(key: #keyPath(Photo.dateTaken), ascending: true)
+        fetchRequest.sortDescriptors = [sortByDateTaken]
+        
+        let viewContext = persistentContainer.viewContext
+        viewContext.perform {
+            do {
+                let allPhotos = try viewContext.fetch(fetchRequest)
+                completion(.success(allPhotos))
+            } catch {
+                completion(.failure(error))
+            }
+        }
+    }
+    
+    // Fetch image for the photo meta.
+    func fetchImage(for photo: Photo, completion: @escaping (Result<UIImage, Error>) -> Void) {
+        let photoKey = photo.photoID!
+        
+        if let image = imageStore.image(forKey: photoKey) {
+            OperationQueue.main.addOperation {
+                completion(.success(image))
+            }
+            return
+        }
+        
+        guard let photoURL = photo.remoteURL, let url = URL(string: photoURL) else {
+            completion(.failure(PhotoError.missingImageURL))
+            return
+        }
+        
+        let request = URLRequest(url: url)
+        
+        let task = session.dataTask(with: request) { data, response, error in
+            let result = self.processImageResponse(data: data, error: error)
+            
+            if case let .success(image) = result {
+                self.imageStore.setImage(image, forKey: photoKey)
+            }
+            
+            OperationQueue.main.addOperation {
+                completion(result)
+            }
+        }
+        
+        task.resume()
+    }
+    
+    private func processImageResponse(data: Data?, error: Error?) -> Result<UIImage, Error> {
+        guard let imageData = data, let image = UIImage(data: imageData) else {
+            if data == nil {
+                return .failure(error!)
+            } else {
+                return .failure(PhotoError.imageCreationError)
+            }
+        }
+        
+        return .success(image)
     }
 }
