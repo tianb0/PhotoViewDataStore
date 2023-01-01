@@ -7,11 +7,19 @@
 
 import UIKit
 
-class ViewController: UIViewController {
+class PhotosViewController: UIViewController {
+    
+    @IBOutlet var collectionView: UICollectionView!
+    
+    var store: PhotoStore!
 
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
+        
+        store.fetchInterestingPhtotos { result in
+            print(result)
+        }
     }
 
 
