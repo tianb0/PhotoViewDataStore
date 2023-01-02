@@ -10,8 +10,8 @@ import UIKit
 import CoreData
 
 enum PhotoError: Error {
-    case imageCreationError
-    case missingImageURL
+case imageCreationError
+case missingImageURL
 }
 
 class PhotoStore {
@@ -38,18 +38,7 @@ class PhotoStore {
         let url = FlickrAPI.interestingPhotosURL
         let request = URLRequest(url: url)
         let task = session.dataTask(with: request) { data, response, error in
-            var result = self.processPhotosResponse(data: data, error: error)
-            
-            if case .success = result {
-                // save photos locally
-                do {
-                    try self.persistentContainer.viewContext.save()
-                } catch {
-                    result = .failure(error)
-                }
-            }
-            
-            OperationQueue.main.addOperation {
+            self.processPhotosResponse(data: data, error: error) { result in
                 completion(result)
             }
         }
@@ -58,46 +47,64 @@ class PhotoStore {
     }
     
     // Process the response data from the interesting photos API
-    private func processPhotosResponse(data: Data?, error: Error?) -> Result<[Photo], Error> {
+    private func processPhotosResponse(data: Data?,
+                                       error: Error?,
+                                       completion: @escaping (Result<[Photo], Error>) -> Void) {
         guard let jsonData = data else {
-            return .failure(error!)
+            completion(.failure(error!))
+            return
         }
         
-        let context = persistentContainer.viewContext // main thread
-        
-        switch FlickrAPI.photos(fromJSON: jsonData) {
-        case let.success(flickrPhotos):
-            let photos = flickrPhotos.map { flickrPhoto -> Photo in
-                
-                // check if we already have one saved locally
-                let fetchRequest: NSFetchRequest<Photo> = Photo.fetchRequest()
-                let predicate = NSPredicate(format: "\(#keyPath(Photo.photoID)) == \(flickrPhoto.photoID)")
-                fetchRequest.predicate = predicate
-                
-                var fetchedPhotos: [Photo]?
-                context.performAndWait {
-                    fetchedPhotos = try? fetchRequest.execute()
+        persistentContainer.performBackgroundTask { context in
+            switch FlickrAPI.photos(fromJSON: jsonData) {
+            case let.success(flickrPhotos):
+                let photos = flickrPhotos.map { flickrPhoto -> Photo in
+                    
+                    // check if we already have one saved locally
+                    let fetchRequest: NSFetchRequest<Photo> = Photo.fetchRequest()
+                    let predicate = NSPredicate(format: "\(#keyPath(Photo.photoID)) == \(flickrPhoto.photoID)")
+                    fetchRequest.predicate = predicate
+                    
+                    var fetchedPhotos: [Photo]?
+                    context.performAndWait {
+                        fetchedPhotos = try? fetchRequest.execute()
+                    }
+                    
+                    if let existingPhoto = fetchedPhotos?.first {
+                        return existingPhoto
+                    }
+                    
+                    // create a new Photo model otherwise
+                    var photo: Photo!
+                    context.performAndWait {
+                        photo = Photo(context: context)
+                        photo.title = flickrPhoto.title
+                        photo.photoID = flickrPhoto.photoID
+                        photo.remoteURL = flickrPhoto.remoteURL
+                        photo.dateTaken = flickrPhoto.dateTaken
+                    }
+                    return photo
                 }
-                
-                if let existingPhoto = fetchedPhotos?.first {
-                    return existingPhoto
+                // for the insertions to persist and be available to other managed object contexts
+                // we need to save the changes to the background context
+                do {
+                    try context.save()
+                } catch {
+                    print("Error saving to Core Data: \(error).")
+                    completion(.failure(error))
+                    return
                 }
+                // An NSManagedObject should only be accessed from the context that it is associated with
                 
-                // create a new Photo model otherwise
-                var photo: Photo!
-                context.performAndWait {
-                    photo = Photo(context: context)
-                    photo.title = flickrPhoto.title
-                    photo.photoID = flickrPhoto.photoID
-                    photo.remoteURL = flickrPhoto.remoteURL
-                    photo.dateTaken = flickrPhoto.dateTaken
-                }
-                return photo
+                let photoIDs = photos.map { $0.objectID }
+                let viewContext = self.persistentContainer.viewContext
+                let viewContextPhotos = photoIDs.map { viewContext.object(with: $0) } as! [Photo]
+                completion(.success(viewContextPhotos))
+            case let .failure(error):
+                completion(.failure(error))
             }
-            return .success(photos)
-        case let .failure(error):
-            return .failure(error)
         }
+        
     }
     
     // Fetch all saved photo metas
