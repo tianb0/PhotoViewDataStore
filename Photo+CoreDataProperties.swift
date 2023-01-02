@@ -1,7 +1,6 @@
 //
 //  Photo+CoreDataProperties.swift
 //  PhotoViewDataStore
-//  Generated from Editor -> Create NSManagedObject subclass
 //
 //  Created by Tianbo Qiu on 1/1/23.
 //
@@ -21,6 +20,24 @@ extension Photo {
     @NSManaged public var photoID: String?
     @NSManaged public var remoteURL: String?
     @NSManaged public var title: String?
+    @NSManaged public var tags: NSSet?
+
+}
+
+// MARK: Generated accessors for tags
+extension Photo {
+
+    @objc(addTagsObject:)
+    @NSManaged public func addToTags(_ value: Tag)
+
+    @objc(removeTagsObject:)
+    @NSManaged public func removeFromTags(_ value: Tag)
+
+    @objc(addTags:)
+    @NSManaged public func addToTags(_ values: NSSet)
+
+    @objc(removeTags:)
+    @NSManaged public func removeFromTags(_ values: NSSet)
 
 }
 

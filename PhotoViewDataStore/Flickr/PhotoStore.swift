@@ -1,6 +1,7 @@
 //
 //  PhotoStore.swift
 //  PhotoViewDataStore
+//  Work as a repository
 //
 //  Created by Tianbo Qiu on 1/1/23.
 //
@@ -159,5 +160,21 @@ class PhotoStore {
         }
         
         return .success(image)
+    }
+    
+    func fetchAllTags(completion: @escaping (Result<[Tag], Error>) -> Void) {
+        let fetchRequest: NSFetchRequest<Tag> = Tag.fetchRequest()
+        let sortByName = NSSortDescriptor(key: #keyPath(Tag.name), ascending: true)
+        fetchRequest.sortDescriptors = [sortByName]
+        
+        let viewContext = persistentContainer.viewContext
+        viewContext.perform {
+            do {
+                let allTags = try fetchRequest.execute()
+                completion(.success(allTags))
+            } catch {
+                completion(.failure(error))
+            }
+        }
     }
 }
